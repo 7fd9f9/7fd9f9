@@ -1,7 +1,7 @@
 ## Setup
 
-Run the `./setup.sh` script. It will download MP-SPDZ version 0.3.8 and run the unit tests for the BFS and maximal flow protocols.
-   
+Clone the repository ( `git clone https://github.com/7fd9f9/7fd9f9.git` ) and run the `./setup.sh` script. It will download MP-SPDZ version 0.3.8 and run the unit tests for the BFS and maximal flow protocols.
+
 ## Execution
 
 After executing the setup, you can run the protocols with the following commands.
