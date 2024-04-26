@@ -1,5 +1,5 @@
 from Programs.Source.utils import generate_graph
-from Programs.Source.bfs import bfs_logarithmic, bfs_layered, bfs_permute, bfs_with_queue
+from Programs.Source.bfs import bfs_logarithmic, bfs_linear, bfs_optimized_blanton_et_al, bfs_comparison_free
 
 protocol = program.args[1]
 
@@ -17,11 +17,11 @@ match protocol:
     case "logarithmic":
         states, parents = bfs_logarithmic(adj, start, timers=True, max_integer_value=max_value)
     case "linear":
-        states, parents = bfs_layered(adj, start, timers=False)
+        states, parents = bfs_linear(adj, start, timers=False)
     case "blanton":
-        states, parents = bfs_permute(adj, start, timers=False)
+        states, parents = bfs_optimized_blanton_et_al(adj, start, timers=False)
     case "no-comparison":
-        states, parents = bfs_with_queue(adj, start, timers=False)
+        states, parents = bfs_comparison_free(adj, start, timers=False)
     case _:
         raise ValueError(f"Unknown protocol: {protocol}")
 stop_timer(2)

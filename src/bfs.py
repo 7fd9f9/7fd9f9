@@ -41,8 +41,246 @@ class BfsNodeState:
         return BfsNodeState(is_visited, is_queued, is_unseen, layer_depth)
 
 
-def bfs_naive(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[
-    list[BfsNodeState], Matrix]:
+def bfs_logarithmic_layers_and_layered_subgraph(adj_matrix: Matrix, start_selector: Array,
+                                                timers: bool = False, max_integer_value: int | None = None,
+                                                compile_prints: bool = False) -> tuple[Matrix, Matrix]:
+    """
+    Finds the layers and the layered subgraph strating from the starting node in O(log n) communication rounds.
+    Details in the paper.
+
+    O(log n) rounds, O(n^3 log n) communications, O(n^3 log n) computation.
+
+    :param adj_matrix: The adjacency matrix of the graph.
+    :param start_selector: The selector array of the starting node.
+    :param timers: Whether timers should be activated or not.
+    :param max_integer_value: If not None, overflow mitigation will reduce intermediary values before the max_integer_value is exceeded.
+    :param compile_prints: Additional compile-time debug prints.
+    :return: Matrix containing selector arrays for layers 1 to n, and adjacency matrix of the layered subgraph.
+    """
+
+    n_nodes = adj_matrix.shape[0]
+
+    if timers:
+        start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY)
+
+    if compile_prints:
+        print("Compiling square and multiply.")
+
+    nodes_after_steps = adj_matrix.same_shape()
+    for i in range(n_nodes):
+        nodes_after_steps[i][:] = start_selector[:]
+    max_values = [1 for _ in range(n_nodes)]
+
+    current_square_adj = adj_matrix.same_shape()
+    current_square_adj[:] = adj_matrix[:]
+    current_square_adj_max_value = 1
+
+    for i in range(math.ceil(math.log2(n_nodes))):
+        # Perform eventual reduction steps to prevent integer overflows.
+        break_point()
+        if timers:
+            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_OVERFLOW_PREVENTION)
+
+        if max_integer_value is not None:
+            if compile_prints:
+                print(f"    Compiling value reductions in iteration {i + 1}")
+
+            if n_nodes * current_square_adj_max_value ** 2 > max_integer_value:
+                print(f"Reducing square matrix to prevent integer overflows at power {i}.")
+                # for x in range(n_nodes):
+                #     for y in range(n_nodes):
+                #         current_square_adj[x][y] = current_square_adj[x][y] != 0
+                current_square_adj[:] = current_square_adj[:] != 0
+                current_square_adj_max_value = 1
+                break_point()
+
+            for j in range(n_nodes):
+                if (j >> i) & 1 == 1:
+                    if (max_integer_value is not None and
+                            n_nodes * max_values[j] * current_square_adj_max_value > max_integer_value):
+                        print(f"Reducing after_steps {j} to prevent integer overflows in round {i}.")
+                        # for k in range(n_nodes):
+                        #     nodes_after_steps[j][k] = (nodes_after_steps[j][k] != 0)
+                        nodes_after_steps[j][:] = nodes_after_steps[j][:] != 0
+                        max_values[j] = 1
+
+            if compile_prints:
+                print(f"        Done")
+
+        # Square and multiply.
+        if timers:
+            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_OVERFLOW_PREVENTION)
+            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE)
+            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_MULTIPLY_OFFSET + i)
+            if compile_prints:
+                print(f"Start timer {BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_MULTIPLY_OFFSET + i}")
+
+        if compile_prints:
+            print(f"     Compiling value updates / matrix multiplications in iteration {i + 1}.")
+
+        break_point()
+        # For whatever reason, this does not parallelize, leading to effective O(n) communication rounds.
+        # for j in range(n_nodes):
+        #     if (j >> i) & 1 == 1:
+        #         nodes_after_steps[j][:] = current_square_adj.direct_mul(nodes_after_steps[j])
+        #         max_values[j] *= n_nodes * current_square_adj_max_value
+
+        # Alternative approach: Multiply everything, pick the interesting results.
+        packing = []
+        for j in range(n_nodes):
+            if (j >> i) & 1 == 1:
+                packing.append(j)
+        packed_nodes_after_steps = sint.Matrix(rows=len(packing), columns=n_nodes)
+        for k, j in enumerate(packing):
+            packed_nodes_after_steps[k][:] = nodes_after_steps[j][:]
+        packed_nodes_after_steps[:] = packed_nodes_after_steps.direct_mul(current_square_adj)
+        for k, j in enumerate(packing):
+            nodes_after_steps[j][:] = packed_nodes_after_steps[k][:]
+
+        if timers:
+            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_MULTIPLY_OFFSET + i)
+            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_SQUARE_OFFSET + i)
+            if compile_prints:
+                print(f"Start timer {BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_SQUARE_OFFSET + i}")
+
+        current_square_adj[:] = current_square_adj.direct_mul(current_square_adj)
+        current_square_adj_max_value = n_nodes * current_square_adj_max_value ** 2
+
+        if timers:
+            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_SQUARE_OFFSET + i)
+            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE)
+
+    break_point()
+    if timers:
+        start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_FINAL_CLEANUP)
+
+    if compile_prints:
+        print(f"     Square and multiply final reduction.")
+
+    # nodes_after_steps = Matrix.create_from([[x > 0 for x in row] for row in nodes_after_steps])
+    nodes_after_steps[:] = nodes_after_steps[:] != 0
+    break_point()
+
+    if compile_prints:
+        print(f"        Done")
+
+    if timers:
+        stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_FINAL_CLEANUP)
+        stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY)
+        start_timer(BFS_LOGARITHMIC_FIND_LAYERS)
+
+    if compile_prints:
+        print(f"Compiling: Find layers.")
+
+    layers = find_first_nonzero_columnwise(nodes_after_steps, compile_prints)
+
+    break_point()
+
+    if compile_prints:
+        print(f"    Done")
+        print(f"Compiling: Finding layered subgraph.")
+
+    if timers:
+        stop_timer(BFS_LOGARITHMIC_FIND_LAYERS)
+        start_timer(BFS_LOGARITHMIC_FIND_SUBGRAPH)
+
+    # Old approach: Produces A LOT of instructions => requires a lot of RAM during compilation.
+    # layered_adj_matrix = Matrix.create_from([
+    #     [adj_matrix[i][j] * sint.dot_product([layers[k][i] for k in range(0, n_nodes - 1)],
+    #                                          [layers[k][j] for k in range(1, n_nodes)])
+    #      for j in range(n_nodes)
+    #      ]
+    #     for i in range(n_nodes)
+    # ])
+
+    layered_adj_matrix_helper_matrix1 = sint.Matrix(rows=n_nodes, columns=n_nodes - 1)
+    layered_adj_matrix_helper_matrix2 = sint.Matrix(rows=n_nodes - 1, columns=n_nodes)
+
+    @for_range(n_nodes)
+    def create_helper_matrix_outer(i: cint) -> None:
+        @for_range(n_nodes - 1)
+        def create_heler_matrix_inner(k: cint) -> None:
+            layered_adj_matrix_helper_matrix1[i][k] = layers[k][i]
+            layered_adj_matrix_helper_matrix2[k][i] = layers[k + 1][i]
+
+    layered_adj_matrix = adj_matrix.same_shape()
+    layered_adj_matrix[:] = adj_matrix[:] * layered_adj_matrix_helper_matrix1.direct_mul(
+        layered_adj_matrix_helper_matrix2)
+
+    break_point()
+
+    if compile_prints:
+        print(f"    Done")
+
+    if timers:
+        stop_timer(BFS_LOGARITHMIC_FIND_SUBGRAPH)
+
+    return layers, layered_adj_matrix
+
+
+def bfs_logarithmic(adj_matrix: Matrix, start_selector: Array, timers: bool = False,
+                    max_integer_value: int | None = 2 ** 63,
+                    compile_prints: bool = False) -> tuple[list[BfsNodeState], Matrix]:
+    """
+    The logarithmic BFS as described in the paper, but returns the transposed tree matrix for more seamless
+    augmenting path extraction.
+
+    Complexities: O(log n) rounds, O(n^3 log n) communication, O(n^3 log n) computation.
+    """
+    n_nodes = adj_matrix.shape[0]
+
+    # First, find the layered subgraph.
+    # This is outsourced to a seperate method as the Dinic-Tarjan max-flow protocol requires the layered
+    # subgraph only.
+    # O(log n) rounds, O(n^3 log n) communication, O(n^3 log n) computation.
+    layers, layered_adj_matrix = bfs_logarithmic_layers_and_layered_subgraph(adj_matrix, start_selector, timers, max_integer_value, compile_prints)
+
+    break_point()
+
+    if compile_prints:
+        print(f"Compiling: Finding BFS tree.")
+
+    if timers:
+        start_timer(BFS_LOGARITHMIC_FIND_TREE)
+
+    # Filter the layered subgraph to the tree matrix.
+    # O(1) rounds, O(n^2) communication, O(n^2) computation.
+    tree_matrix = find_first_nonzero_columnwise(layered_adj_matrix, compile_prints)
+
+    if compile_prints:
+        print(f"    Done")
+        print(f"Compiling: Rest.")
+
+    # Return results.
+    # 0 round, 0 communication, O(n) computation.
+    seen = start_selector.same_shape()
+    seen[:] = start_selector[:]
+
+    depths = start_selector.same_shape()
+    depths[:] = 0
+
+    for i in range(1, n_nodes):
+        seen[:] += layers[i][:]
+        depths[:] += i * layers[i][:]
+
+    if timers:
+        stop_timer(BFS_LOGARITHMIC_FIND_TREE)
+
+    node_states = [
+        BfsNodeState(is_visited=seen[i],
+                     is_queued=sint(0),
+                     is_unseen=1 - seen[i],
+                     layer_depth=depths[i]
+                     ) for i in range(n_nodes)
+    ]
+
+    if compile_prints:
+        print(f"    Done")
+
+    return node_states, tree_matrix.transpose()
+
+
+def bfs_naive(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[list[BfsNodeState], Matrix]:
     if timers:
         start_timer(BFS_TIMER_INIT_STATE)
 
@@ -145,7 +383,7 @@ def bfs_naive(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -
     return node_states, parent_selectors
 
 
-def bfs_permute(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[list[BfsNodeState], Matrix]:
+def bfs_optimized_blanton_et_al(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[list[BfsNodeState], Matrix]:
     """
     Performs a breadth first search. This variation permutes the adjacency matrix and reveals the order in which the
     permuted nodes are visited.
@@ -317,8 +555,7 @@ class SelectorQueue:
         self.queue_state.assign_vector(self.queue_state.get_vector() * selector_vec)
 
 
-def bfs_with_queue(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[
-    list[BfsNodeState], Matrix]:
+def bfs_comparison_free(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[list[BfsNodeState], Matrix]:
     """
     Performs a breadth first search. This variation avoids comparisons by having a bigger state, which was experimentally shown to
     be faster.
@@ -457,7 +694,7 @@ def bfs_with_queue(adj_matrix: Matrix, start_selector: Array, timers: bool = Fal
     return node_states, parent_selectors
 
 
-def bfs_layered(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[list[BfsNodeState], Matrix]:
+def bfs_linear(adj_matrix: Matrix, start_selector: Array, timers: bool = False) -> tuple[list[BfsNodeState], Matrix]:
     """
     Performs a breadth-first search. This variation visits all nodes in one layer simultaneously, allowing a
     communication round complexity of O(n).
@@ -543,228 +780,6 @@ def bfs_layered(adj_matrix: Matrix, start_selector: Array, timers: bool = False)
         ) for i in range(n_nodes)
     ]
     return node_states, parent_matrix
-
-
-def bfs_logarithmic_layers_and_layered_subgraph(adj_matrix: Matrix, start_selector: Array,
-                                                timers: bool = False, max_integer_value: int | None = None,
-                                                compile_prints: bool = False) -> tuple[Matrix, Matrix]:
-    """
-    Finds the
-    :param adj_matrix:
-    :param start_selector:
-    :param timers:
-    :param max_integer_value:
-    :param compile_prints:
-    :return:
-    """
-
-    n_nodes = adj_matrix.shape[0]
-
-    if timers:
-        start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY)
-
-    if compile_prints:
-        print("Compiling square and multiply.")
-
-    nodes_after_steps = adj_matrix.same_shape()
-    for i in range(n_nodes):
-        nodes_after_steps[i][:] = start_selector[:]
-    max_values = [1 for _ in range(n_nodes)]
-
-    current_square_adj = adj_matrix.same_shape()
-    current_square_adj[:] = adj_matrix[:]
-    current_square_adj_max_value = 1
-
-    for i in range(math.ceil(math.log2(n_nodes))):
-        # Perform eventual reduction steps to prevent integer overflows.
-        break_point()
-        if timers:
-            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_OVERFLOW_PREVENTION)
-
-        if max_integer_value is not None:
-            if compile_prints:
-                print(f"    Compiling value reductions in iteration {i + 1}")
-
-            if n_nodes * current_square_adj_max_value ** 2 > max_integer_value:
-                print(f"Reducing square matrix to prevent integer overflows at power {i}.")
-                # for x in range(n_nodes):
-                #     for y in range(n_nodes):
-                #         current_square_adj[x][y] = current_square_adj[x][y] != 0
-                current_square_adj[:] = current_square_adj[:] != 0
-                current_square_adj_max_value = 1
-                break_point()
-
-            for j in range(n_nodes):
-                if (j >> i) & 1 == 1:
-                    if (max_integer_value is not None and
-                            n_nodes * max_values[j] * current_square_adj_max_value > max_integer_value):
-                        print(f"Reducing after_steps {j} to prevent integer overflows in round {i}.")
-                        # for k in range(n_nodes):
-                        #     nodes_after_steps[j][k] = (nodes_after_steps[j][k] != 0)
-                        nodes_after_steps[j][:] = nodes_after_steps[j][:] != 0
-                        max_values[j] = 1
-
-            if compile_prints:
-                print(f"        Done")
-
-        # Square and multiply.
-        if timers:
-            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_OVERFLOW_PREVENTION)
-            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE)
-            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_MULTIPLY_OFFSET + i)
-            if compile_prints:
-                print(f"Start timer {BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_MULTIPLY_OFFSET + i}")
-
-        if compile_prints:
-            print(f"     Compiling value updates / matrix multiplications in iteration {i + 1}.")
-
-        break_point()
-        # For whatever reason, this does not parallelize, leading to effective O(n) communication rounds.
-        # for j in range(n_nodes):
-        #     if (j >> i) & 1 == 1:
-        #         nodes_after_steps[j][:] = current_square_adj.direct_mul(nodes_after_steps[j])
-        #         max_values[j] *= n_nodes * current_square_adj_max_value
-
-        # Alternative approach: Multiply everything, pick the interesting results.
-        packing = []
-        for j in range(n_nodes):
-            if (j >> i) & 1 == 1:
-                packing.append(j)
-        packed_nodes_after_steps = sint.Matrix(rows=len(packing), columns=n_nodes)
-        for k, j in enumerate(packing):
-            packed_nodes_after_steps[k][:] = nodes_after_steps[j][:]
-        packed_nodes_after_steps[:] = packed_nodes_after_steps.direct_mul(current_square_adj)
-        for k, j in enumerate(packing):
-            nodes_after_steps[j][:] = packed_nodes_after_steps[k][:]
-
-        if timers:
-            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_MULTIPLY_OFFSET + i)
-            start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_SQUARE_OFFSET + i)
-            if compile_prints:
-                print(f"Start timer {BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_SQUARE_OFFSET + i}")
-
-        current_square_adj[:] = current_square_adj.direct_mul(current_square_adj)
-        current_square_adj_max_value = n_nodes * current_square_adj_max_value ** 2
-
-        if timers:
-            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE_SQUARE_OFFSET + i)
-            stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_UPDATE)
-
-    break_point()
-    if timers:
-        start_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_FINAL_CLEANUP)
-
-    if compile_prints:
-        print(f"     Square and multiply final reduction.")
-
-    # nodes_after_steps = Matrix.create_from([[x > 0 for x in row] for row in nodes_after_steps])
-    nodes_after_steps[:] = nodes_after_steps[:] != 0
-    break_point()
-
-    if compile_prints:
-        print(f"        Done")
-
-    if timers:
-        stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY_FINAL_CLEANUP)
-        stop_timer(BFS_LOGARITHMIC_SQUARE_AND_MULTIPLY)
-        start_timer(BFS_LOGARITHMIC_FIND_LAYERS)
-
-    if compile_prints:
-        print(f"Compiling: Find layers.")
-
-    layers = find_first_nonzero_columnwise(nodes_after_steps, compile_prints)
-
-    break_point()
-
-    if compile_prints:
-        print(f"    Done")
-        print(f"Compiling: Finding layered subgraph.")
-
-    if timers:
-        stop_timer(BFS_LOGARITHMIC_FIND_LAYERS)
-        start_timer(BFS_LOGARITHMIC_FIND_SUBGRAPH)
-
-    # Old approach: Produces A LOT of instructions => requires a lot of RAM during compilation.
-    # layered_adj_matrix = Matrix.create_from([
-    #     [adj_matrix[i][j] * sint.dot_product([layers[k][i] for k in range(0, n_nodes - 1)],
-    #                                          [layers[k][j] for k in range(1, n_nodes)])
-    #      for j in range(n_nodes)
-    #      ]
-    #     for i in range(n_nodes)
-    # ])
-
-    layered_adj_matrix_helper_matrix1 = sint.Matrix(rows=n_nodes, columns=n_nodes - 1)
-    layered_adj_matrix_helper_matrix2 = sint.Matrix(rows=n_nodes - 1, columns=n_nodes)
-
-    @for_range(n_nodes)
-    def create_helper_matrix_outer(i: cint) -> None:
-        @for_range(n_nodes - 1)
-        def create_heler_matrix_inner(k: cint) -> None:
-            layered_adj_matrix_helper_matrix1[i][k] = layers[k][i]
-            layered_adj_matrix_helper_matrix2[k][i] = layers[k + 1][i]
-
-    layered_adj_matrix = adj_matrix.same_shape()
-    layered_adj_matrix[:] = adj_matrix[:] * layered_adj_matrix_helper_matrix1.direct_mul(
-        layered_adj_matrix_helper_matrix2)
-
-    break_point()
-
-    if compile_prints:
-        print(f"    Done")
-
-    if timers:
-        stop_timer(BFS_LOGARITHMIC_FIND_SUBGRAPH)
-
-    return layers, layered_adj_matrix
-
-
-def bfs_logarithmic(adj_matrix: Matrix, start_selector: Array, timers: bool = False,
-                    max_integer_value: int | None = 2 ** 63,
-                    compile_prints: bool = False) -> tuple[
-    list[BfsNodeState], Matrix]:
-    n_nodes = adj_matrix.shape[0]
-
-    layers, layered_adj_matrix = bfs_logarithmic_layers_and_layered_subgraph(adj_matrix, start_selector, timers, max_integer_value, compile_prints)
-
-    break_point()
-
-    if compile_prints:
-        print(f"Compiling: Finding BFS tree.")
-
-    if timers:
-        start_timer(BFS_LOGARITHMIC_FIND_TREE)
-
-    child_matrix = find_first_nonzero_columnwise(layered_adj_matrix, compile_prints)
-
-    if compile_prints:
-        print(f"    Done")
-        print(f"Compiling: Rest.")
-
-    seen = start_selector.same_shape()
-    seen[:] = start_selector[:]
-
-    depths = start_selector.same_shape()
-    depths[:] = 0
-
-    for i in range(1, n_nodes):
-        seen[:] += layers[i][:]
-        depths[:] += i * layers[i][:]
-
-    if timers:
-        stop_timer(BFS_LOGARITHMIC_FIND_TREE)
-
-    node_states = [
-        BfsNodeState(is_visited=seen[i],
-                     is_queued=sint(0),
-                     is_unseen=1 - seen[i],
-                     layer_depth=depths[i]
-                     ) for i in range(n_nodes)
-    ]
-
-    if compile_prints:
-        print(f"    Done")
-
-    return node_states, child_matrix.transpose()
 
 
 bfs = bfs_logarithmic

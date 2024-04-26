@@ -17,7 +17,7 @@ def max_flow_edmonds_karp(cap_matrix: Matrix, source_selector: Array, sink_selec
                           infinity: int = 2 ** 40,
                           logarithmic_path_construction: bool = True) -> Matrix:
     """
-    Calculates a maximum flow according to the Edmonds-Karp algorithm, i.e., it finds augmentings paths using a
+    Calculates a maximum flow according to the Edmonds-Karp algorithm, i.e., it finds augmenting paths using a
     breadth-first-search.
 
     Usually, this requires O(n^3) breadth-first-searches, leading to O(n^3 log n) rounds, O(n^6 log n) communication, and O(n^6 log n) computation.
@@ -26,7 +26,7 @@ def max_flow_edmonds_karp(cap_matrix: Matrix, source_selector: Array, sink_selec
     This works because in each iteration, either at least one unit of flow is sent from the source to the sink, or an
     maximal flow has already been reached.
     An easy way to infer an upper bound of the maximal flow is provided by the max_capacity parameter that translates
-    to a maximal flow value of n*max_capacity.
+    to a maximal flow value of n*max_capacity (f <= maximal outflow of the source <= n*max_capacity).
 
     In the case a bound f < n^3 is known, the algorithm has a complexity of
      O(f log n) rounds, O(f n^3 log n) communication, and O(f n^3 log n) computation.
@@ -114,6 +114,20 @@ def max_flow_edmonds_karp(cap_matrix: Matrix, source_selector: Array, sink_selec
 def max_flow_capacity_scaling(cap_matrix: Matrix, source_selector: Array, sink_selector: Array, max_capacity: int,
                               leak_better_step_iterations: bool = False,
                               infinity: int = 2**40, bfs_algorithm=bfs, logarithmic_path_construction: bool = True) -> Matrix:
+    """
+    Capacity scaling as described in the paper. Reduces the maximal flow problem to a series of "easy" max flow
+    problems that can be solved efficiently using the Edmonds-Karp algorithm.
+
+    :param cap_matrix: The capacity matrix of the graph.
+    :param source_selector: Source selector indicating the source node.
+    :param sink_selector: Source selector indicating the sink node.
+    :param max_capacity: An upper bound on the edge capacities.
+    :param infinity: A very large number, it must be bigger than the sum of all edge capacities.
+    :param bfs_algorithm: The BFS to use.
+    :param logarithmic_path_construction: Whether the augmenting path should be extracted in O(log n) round instead of O(n).
+    :returns: The maximal flow matrix.
+    """
+
     n_nodes = cap_matrix.shape[0]
     bit_length = math.ceil(math.log2(max_capacity))
 
@@ -142,10 +156,6 @@ def max_flow_capacity_scaling(cap_matrix: Matrix, source_selector: Array, sink_s
     for (step_capacity_matrix, step_iterations) in zip(reduced_capacity_matrices, iterations):
         if not leak_better_step_iterations:
             # Upper bound on step iterations:
-            # We require that cost[i][j] = -cost[j][i], hence:
-            # All costs on the diagonal are 0, and at most half of the remaining values are negative.
-            # Since the cost can only improve when the bit of a negative entry is set, the following bound holds.
-            # (This leads to a total complexity of O(n^3 log C), which is better than plain min-mean-cycle-cancel.)
             step_iterations = n_nodes * (n_nodes - 1)
 
         flow[:] *= 2
