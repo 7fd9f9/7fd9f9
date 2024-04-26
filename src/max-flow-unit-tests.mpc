@@ -1,0 +1,117 @@
+from Programs.Source.max_flow import max_flow_edmonds_karp, max_flow_dinic_tarjan, max_flow_capacity_scaling
+
+
+def run_test_case(cap_matrix: list[list[int]], source: int, sink: int, max_flow_value: int, algorithm) -> None:
+    n_nodes = len(cap_matrix)
+    clear_cap_matrix = Matrix.create_from([[cint(x) for x in row] for row in cap_matrix])
+    secret_cap_matrix = Matrix.create_from([[sint(x) for x in row] for row in cap_matrix])
+
+    source_selector = sint.Array(n_nodes)
+    source_selector.assign_all(0)
+    source_selector[source] = 1
+
+    sink_selector = sint.Array(n_nodes)
+    sink_selector.assign_all(0)
+    sink_selector[sink] = 1
+
+    secret_flow = algorithm(secret_cap_matrix, source_selector, sink_selector)
+    flow = secret_flow.reveal()
+
+    def print_flow():
+        for row in flow:
+            row.print_reveal_nested()
+
+    @for_range(n_nodes)
+    def check_outer_iter(i: cint) -> None:
+        allowed_sum = cint(0)
+        @if_(i == source)
+        def _():
+            allowed_sum.update(max_flow_value)
+        @if_(i == sink)
+        def _():
+            allowed_sum.update(-max_flow_value)
+
+        @if_(sum(flow[i]) != allowed_sum)
+        def _():
+            print_flow()
+            print_ln("Node does not meet flow conservation constraints.")
+            crash()
+
+        @for_range(n_nodes)
+        def check_inter_iter(j: cint) -> None:
+            @if_(flow[i][j] != -flow[j][i])
+            def _():
+                print_flow()
+                print_ln("Flow along an edge is not the negative of reverse edge.")
+                crash()
+
+            @if_(flow[i][j] > clear_cap_matrix[i][j])
+            def _():
+                print_flow()
+                print_ln("Flow violates capacity constraints.")
+                crash()
+
+
+def test_case_1(algorithm) -> None:
+    cap_matrix = [
+        [0, 100, 100, 0],
+        [0, 0, 1, 100],
+        [0, 0, 0, 100],
+        [0, 0, 0, 0]
+    ]
+    run_test_case(cap_matrix, 0, 3, 200, algorithm)
+
+
+def test_case_2(algorithm) -> None:
+    cap_matrix = [
+        [0, 0, 0, 5, 10, 0],
+        [0, 0, 10, 0, 0, 5],
+        [0, 10, 0, 0, 0, 10],
+        [0, 10, 0, 0, 10, 0],
+        [0, 0, 5, 10, 0, 0],
+        [0, 0, 0, 0, 0, 0]
+    ]
+    run_test_case(cap_matrix, 0, 5, 15, algorithm)
+
+
+def test_case_3(algorithm):
+    cap_matrix = [
+        [0, 1, 1],
+        [0, 0, 0],
+        [0, 0, 0]
+    ]
+    run_test_case(cap_matrix, 0, 1, 1, algorithm)
+
+
+def test_suite(algorithm) -> None:
+    print_ln(" | Test case 1")
+    test_case_1(algorithm)
+    print_ln(" |   Passed")
+    print_ln(" | Test case 2")
+    test_case_2(algorithm)
+    print_ln(" |   Passed")
+    print_ln(" | Test case 3")
+    test_case_3(algorithm)
+    print_ln(" +   Passed")
+
+
+def run():
+    print_ln("Running test suite on Edmonds-Karp.")
+    test_suite(max_flow_edmonds_karp)
+
+    print_ln("Running test suite on Dinic-Tarjan")
+    test_suite(max_flow_dinic_tarjan)
+
+    capacity_scaling_16_bit = lambda cap, source, sink: max_flow_capacity_scaling(cap, source, sink, 2**16,
+                                                                                   leak_better_step_iterations=False)
+    print_ln("Running test suite on Capacity-Scaling (16 bit)")
+    test_suite(capacity_scaling_16_bit)
+
+    capacity_scaling_32_bit = lambda cap, source, sink: max_flow_capacity_scaling(cap, source, sink, 2 ** 32,
+                                                                                  leak_better_step_iterations=False)
+    print_ln("Running test suite on Capacity-Scaling (32 bit)")
+    test_suite(capacity_scaling_32_bit)
+
+
+
+run()

@@ -1,0 +1,145 @@
+from Programs.Source.bfs import bfs_logarithmic, BfsNodeState
+
+def run_test_case(adj_matrix: list[list[int]], start_node: int,
+                  reachable: list[int], depths: list[int],
+                  algorithm) -> None:
+    n_nodes = len(adj_matrix)
+
+    secret_adj_matrix = Matrix.create_from([[sint(x) for x in row] for row in adj_matrix])
+    start_selector = sint.Array(n_nodes)
+    start_selector.assign_all(0)
+    start_selector[start_node] = sint(1)
+
+    node_states, parent_matrix = algorithm(secret_adj_matrix, start_selector)
+
+    for i, state in enumerate(node_states):
+        state: BfsNodeState
+
+        seen = state.is_visited.reveal()
+        queued = state.is_queued.reveal()
+        unseen = state.is_unseen.reveal()
+        layer_depth = state.layer_depth.reveal()
+
+        @if_(seen != reachable[i])
+        def _():
+            print_ln("Wrong seen value!")
+            crash()
+
+        @if_(queued != 0)
+        def _():
+            print_ln("Enqueued node!")
+            crash()
+
+        @if_(unseen != (1 - reachable[i]))
+        def _():
+            print_ln("Wrong unseen value!")
+            crash()
+
+        if reachable[i] == 1:
+            @if_(layer_depth != depths[i])
+            def _():
+                print_ln("Wrong layer depth!")
+                crash()
+
+    for i in range(n_nodes):
+        if i == start_node:
+            for j in range(n_nodes):
+                @if_(parent_matrix[i][j].reveal() != 0)
+                def _():
+                    print_ln("Start node has parent!")
+                    crash()
+        else:
+            @if_(sum(parent_matrix[i][:]).reveal() > 1)
+            def _():
+                print_ln("Node has more than one parent.")
+                crash()
+
+            for j in range(n_nodes):
+                @if_((parent_matrix[i][j].reveal() != 0) * (parent_matrix[i][j].reveal() != 1))
+                def _():
+                    print_ln("Parent matrix is not binary!")
+                    crash()
+
+                @if_(parent_matrix[i][j].reveal() == 1)
+                def _():
+                    if adj_matrix[j][i] == 0:
+                        print_ln("Parent matrix runs along non-edges.")
+                        crash()
+
+                    @if_((node_states[j].layer_depth.reveal() + 1) != node_states[i].layer_depth.reveal())
+                    def _():
+                        print_ln("Parent matrix jumps layers.")
+                        crash()
+
+
+def test_case_1(algorithm) -> None:
+    # Just a graph I used on paper for debugging.
+    adj_matrix = [
+        [0, 1, 1, 0],
+        [0, 0, 1, 1],
+        [0, 0, 0, 1],
+        [1, 0, 0, 0]
+    ]
+    run_test_case(adj_matrix, 0, [1, 1, 1, 1], [0, 1, 1, 2], algorithm)
+
+
+def test_case_2(algorithm) -> None:
+    # Fully connected.
+    adj_matrix = [
+        [0, 1, 1, 1],
+        [1, 0, 1, 1],
+        [1, 1, 0, 1],
+        [1, 1, 1, 0]
+    ]
+    run_test_case(adj_matrix, 0, [1, 1, 1, 1], [0, 1, 1, 1], algorithm)
+
+
+def test_case_3(algorithm) -> None:
+    # One node unreachable.
+    adj_matrix = [
+        [0, 1, 1, 0],
+        [1, 0, 1, 0],
+        [1, 1, 0, 0],
+        [1, 1, 1, 0]
+    ]
+    run_test_case(adj_matrix, 0, [1, 1, 1, 0], [0, 1, 1, 0], algorithm)
+
+
+def test_case_4(algorithm) -> None:
+    # One node unreachable.
+    adj_matrix = [
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+        [0, 0, 0, 0]
+    ]
+    run_test_case(adj_matrix, 0, [1, 1, 1, 1], [0, 1, 2, 3], algorithm)
+
+
+def test_suite(algorithm) -> None:
+    print_ln(" | Test 1")
+    test_case_1(algorithm)
+    print_ln(" |   Passed")
+    print_ln(" | Test 2")
+    test_case_2(algorithm)
+    print_ln(" |   Passed")
+    print_ln(" | Test 3")
+    test_case_3(algorithm)
+    print_ln(" |   Passed")
+    print_ln(" | Test 4")
+    test_case_4(algorithm)
+    print_ln(" +   Passed")
+
+
+def run():
+    print_ln("Running test suite on bfs_logarithmic with overflows")
+    bfs_logarithmic_with_overflow = lambda adj_matrix, start_selector: bfs_logarithmic(adj_matrix, start_selector, max_integer_value=None)
+    test_suite(bfs_logarithmic_with_overflow)
+
+    print_ln("Running test suite on bfs_logarithmic without overflows")
+    bfs_logarithmic_without_overflow = lambda adj_matrix, start_selector: bfs_logarithmic(adj_matrix, start_selector,
+                                                                                       max_integer_value=7)
+    test_suite(bfs_logarithmic_without_overflow)
+
+
+run()

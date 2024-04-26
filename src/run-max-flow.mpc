@@ -1,0 +1,33 @@
+from Programs.Source.utils import generate_graph
+from Programs.Source.max_flow import max_flow_edmonds_karp, max_flow_capacity_scaling, max_flow_dinic_tarjan
+
+protocol = program.args[1]
+
+number_of_nodes = int(int(program.args[2]))
+
+
+adj, source, sink = generate_graph(number_of_nodes)
+
+
+start_timer(2)
+match protocol:
+    case "edmonds-karp":
+        flow = max_flow_edmonds_karp(adj, source, sink)
+    case "capacity-scaling":
+        if len(program.args) < 4:
+            raise ValueError("A bit length is required for capacity-scaling protocols.")
+        max_cap = 2**int(program.args[3])
+        flow = max_flow_capacity_scaling(adj, source, sink, max_cap)
+    case "dinic-tarjan":
+        flow = max_flow_dinic_tarjan(adj, source, sink)
+    case _:
+        raise ValueError(f"Unknown protocol: {protocol}")
+stop_timer(2)
+
+start_timer(3)
+print_ln("Flow:")
+
+@for_range(number_of_nodes)
+def _(i):
+    flow[i].print_reveal_nested()
+stop_timer(3)

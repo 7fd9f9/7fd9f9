@@ -1,0 +1,35 @@
+from Programs.Source.utils import generate_graph
+from Programs.Source.bfs import bfs_logarithmic, bfs_layered, bfs_permute, bfs_with_queue
+
+protocol = program.args[1]
+
+number_of_nodes = int(int(program.args[2]))
+max_value = None
+if len(program.args) >= 4:
+    max_value = int(program.args[3])
+
+
+adj, start, _ = generate_graph(number_of_nodes)
+
+
+start_timer(2)
+match protocol:
+    case "logarithmic":
+        states, parents = bfs_logarithmic(adj, start, timers=True, max_integer_value=max_value)
+    case "linear":
+        states, parents = bfs_layered(adj, start, timers=False)
+    case "blanton":
+        states, parents = bfs_permute(adj, start, timers=False)
+    case "no-comparison":
+        states, parents = bfs_with_queue(adj, start, timers=False)
+    case _:
+        raise ValueError(f"Unknown protocol: {protocol}")
+stop_timer(2)
+
+start_timer(3)
+print_ln("Parents:")
+
+@for_range(number_of_nodes)
+def _(i):
+    parents[i].print_reveal_nested()
+stop_timer(3)
